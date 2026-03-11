@@ -1,160 +1,141 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import LoadingSkeleton from "../components/LoadingSkeleton";
+import PriceChart from "../components/PriceChart";
+import { estimateFairValueFromEPS } from "../lib/valuation";
+import { buildPriceSeries } from "../utils/chart";
+
+const appName = process.env.NEXT_PUBLIC_APP_NAME || "Saudi Stock Analyzer";
 
 export default function Home() {
-  const [query, setQuery] = useState("");
-  const [source, setSource] = useState("twelvedata");
-  const [assumedPE, setAssumedPE] = useState("12");
+  const [symbol, setSymbol] = useState("2222");
+  const [source, setSource] = useState("finnhub");
+  const [assumedPE, setAssumedPE] = useState(14);
+  const [stock, setStock] = useState(null);
+  const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
 
-  async function search(e) {
+  const fairValue = useMemo(() => estimateFairValueFromEPS(stock?.eps, assumedPE), [stock, assumedPE]);
+  const marginOfSafety = useMemo(() => {
+    if (!fairValue || !stock?.currentPrice) return null;
+    return Number((((fairValue - stock.currentPrice) / fairValue) * 100).toFixed(2));
+  }, [fairValue, stock]);
+
+  const chartData = useMemo(
+    () => buildPriceSeries(stock?.currentPrice, stock?.previousClose),
+    [stock?.currentPrice, stock?.previousClose]
+  );
+
+  const fetchData = async (e) => {
     e?.preventDefault();
-    if (!query) return;
+    if (!symbol) return;
     setLoading(true);
-    setResult(null);
+    setError("");
+
     try {
-      const res = await fetch(
-        `/api/company/${encodeURIComponent(query)}?source=${encodeURIComponent(
-          source
-        )}&assumedPE=${encodeURIComponent(assumedPE)}`
-      );
-      const data = await res.json();
-      setResult(data);
+      const [stockRes, newsRes] = await Promise.all([
+        fetch(`/api/stock/${encodeURIComponent(symbol)}?source=${source}`),
+        fetch(`/api/news/${encodeURIComponent(symbol)}?source=${source}`)
+      ]);
+
+      const stockPayload = await stockRes.json();
+      const newsPayload = await newsRes.json();
+
+      if (!stockRes.ok) {
+        setStock(null);
+        setNews([]);
+        setError(stockPayload?.error || "Stock not found");
+      } else {
+        setStock(stockPayload);
+        setNews(Array.isArray(newsPayload) ? newsPayload : []);
+      }
     } catch (err) {
-      setResult({ error: err.message });
+      setError("Data unavailable");
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   return (
-    <main style={{ padding: 20, fontFamily: "system-ui, sans-serif", maxWidth: 900 }}>
-      <h1>محلل أسهم مبدئي — أدخل رمز أو اسم الشركة</h1>
-
-      <form onSubmit={search} style={{ marginBottom: 12 }}>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="مثال: 2222 أو SABIC أو 2222.SR"
-          style={{ padding: 8, width: 320 }}
-        />
-
-        <select
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-          style={{ marginLeft: 8, padding: 8 }}
-        >
-          <option value="twelvedata">Twelve Data</option>
-          <option value="finnhub">Finnhub</option>
+    <main className="mx-auto min-h-screen max-w-6xl p-6">
+      <header className="mb-6 flex flex-col gap-3 rounded-xl bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <h1 className="text-xl font-semibold">{appName}</h1>
+        <select className="rounded-md border p-2" value={source} onChange={(e) => setSource(e.target.value)}>
+          <option value="finnhub">Finnhub (primary)</option>
+          <option value="twelvedata">TwelveData</option>
         </select>
+      </header>
 
-        <label style={{ marginLeft: 8 }}>
-          افتراض مكرر الربحية (PE):
+      <form className="rounded-xl bg-white p-4 shadow-sm" onSubmit={fetchData}>
+        <div className="grid gap-3 md:grid-cols-4">
           <input
-            value={assumedPE}
-            onChange={(e) => setAssumedPE(e.target.value)}
-            style={{ width: 70, marginLeft: 6, padding: 6 }}
+            className="rounded-md border p-2"
+            placeholder="2222, 2222.SR, SABIC"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+          />
+          <input
+            className="rounded-md border p-2"
             type="number"
             min="1"
+            value={assumedPE}
+            onChange={(e) => setAssumedPE(Number(e.target.value || 1))}
           />
-        </label>
-
-        <button type="submit" style={{ marginLeft: 8, padding: "8px 12px" }}>
-          بحث
-        </button>
+          <button className="rounded-md bg-blue-600 p-2 font-medium text-white" type="submit">
+            Analyze
+          </button>
+        </div>
       </form>
 
-      {loading && <p>جاري البحث... (قد تحتاج وضع مفاتيح API في إعدادات Vercel)</p>}
+      {loading && <LoadingSkeleton />}
+      {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</p>}
 
-      {result && result.error && (
-        <div style={{ color: "red" }}>
-          <strong>خطأ:</strong> {result.error}
-        </div>
-      )}
-
-      {result && !result.error && (
-        <section style={{ marginTop: 10 }}>
-          <h2>
-            {result.companyName ?? "—"} ({result.symbol ?? "—"})
-          </h2>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-            <div>
-              <b>السعر الحالي</b>
-              <div>{result.currentPrice ?? "—"}</div>
-            </div>
-
-            <div>
-              <b>سعر خلال 52 أسبوع</b>
-              <div>High: {result["52WeekHigh"] ?? "—"}</div>
-              <div>Low: {result["52WeekLow"] ?? "—"}</div>
-            </div>
-
-            <div>
-              <b>مكرر الربحية (P/E)</b>
-              <div>{result.pe ?? "—"}</div>
-            </div>
-
-            <div>
-              <b>حجم التداول</b>
-              <div>{result.volume ?? "—"}</div>
-            </div>
-
-            <div>
-              <b>القيمة العادلة (بافتراض PE = {result.assumedPE ?? assumedPE})</b>
-              <div>{result.fairValue ?? "—"}</div>
-            </div>
-
-            <div>
-              <b>نسبة هامش الأمان</b>
-              <div>
-                {result.marginOfSafetyPercent != null
-                  ? `${result.marginOfSafetyPercent.toFixed(1)}%`
-                  : "—"}
-              </div>
-            </div>
-
-            <div>
-              <b>سعر الاكتتاب</b>
-              <div>{result.ipoPrice ?? "—"}</div>
-            </div>
-
-            <div>
-              <b>قطاع / صناعة</b>
-              <div>
-                {result.sector ?? "-"} / {result.industry ?? "-"}
-              </div>
-            </div>
-
-            <div style={{ gridColumn: "1 / -1" }}>
-              <b>التوزيعات (إن أعلنت خلال 10 أيام)</b>
-              <div>{result.recentDividendAnnouncement ? result.recentDividendAnnouncement : "لا"}</div>
+      {stock && !loading && (
+        <section className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl bg-white p-4 shadow-sm md:col-span-2">
+            <h2 className="text-lg font-semibold">{stock.companyName} ({stock.symbol})</h2>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <p>Current Price: {stock.currentPrice ?? "—"}</p>
+              <p>Previous Close: {stock.previousClose ?? "—"}</p>
+              <p>52W High: {stock["52WeekHigh"] ?? "—"}</p>
+              <p>52W Low: {stock["52WeekLow"] ?? "—"}</p>
+              <p>Volume: {stock.volume ?? "—"}</p>
+              <p>Market Cap: {stock.marketCap ?? "—"}</p>
+              <p>P/E: {stock.peRatio ?? "—"}</p>
+              <p>EPS: {stock.eps ?? "—"}</p>
+              <p>Dividend Yield: {stock.dividendYield ?? "—"}</p>
+              <p>IPO Price: {stock.ipoPrice ?? "—"}</p>
+              <p>Sector: {stock.sector ?? "—"}</p>
+              <p>Industry: {stock.industry ?? "—"}</p>
             </div>
           </div>
 
-          <div style={{ marginTop: 16 }}>
-            <h3>أخبار متعلقة</h3>
-            {result.news && result.news.length ? (
-              <ul>
-                {result.news.map((n, i) => (
-                  <li key={i}>
-                    <a href={n.url} target="_blank" rel="noreferrer">
-                      {n.headline}
-                    </a>{" "}
-                    <small>— {n.source} ({n.date})</small>
+          <div className="rounded-xl bg-white p-4 shadow-sm">
+            <h3 className="font-semibold">Valuation</h3>
+            <p className="mt-2 text-sm">Fair Value (EPS × PE): {fairValue ?? "—"}</p>
+            <p className="text-sm">Margin of Safety: {marginOfSafety != null ? `${marginOfSafety}%` : "—"}</p>
+          </div>
+
+          <div className="rounded-xl bg-white p-4 shadow-sm md:col-span-2">
+            <h3 className="mb-2 font-semibold">30-Day Trend</h3>
+            <PriceChart data={chartData} />
+          </div>
+
+          <div className="rounded-xl bg-white p-4 shadow-sm">
+            <h3 className="mb-2 font-semibold">Latest News</h3>
+            <ul className="space-y-2 text-sm">
+              {news.length ? (
+                news.map((item) => (
+                  <li key={item.url}>
+                    <a href={item.url} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
+                      {item.headline}
+                    </a>
                   </li>
-                ))}
-              </ul>
-            ) : (
-              <div>لا توجد أخبار قيد العرض.</div>
-            )}
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <h3>البيانات الخام (debug)</h3>
-            <pre style={{ background: "#f5f5f5", padding: 10, maxHeight: 300, overflow: "auto" }}>
-              {JSON.stringify(result.raw ?? {}, null, 2)}
-            </pre>
+                ))
+              ) : (
+                <li>Data unavailable</li>
+              )}
+            </ul>
           </div>
         </section>
       )}

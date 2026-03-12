@@ -6,7 +6,7 @@ class Parser {
     }
 
     const xml = await response.text();
-    return parseRSS(xml, url);
+    return parseFeed(xml, url);
   }
 }
 
@@ -28,37 +28,54 @@ function getTagValue(block, tagName) {
   return match ? decodeEntities(match[1]) : null;
 }
 
-function parseRSS(xml, fallbackTitle) {
-  const items = [];
-  const channelTitle = getTagValue(xml, 'title') || fallbackTitle;
-  const itemMatches = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
-
-  for (const itemXML of itemMatches) {
-    const title = getTagValue(itemXML, 'title');
-    const link = getTagValue(itemXML, 'link');
-    const pubDate = getTagValue(itemXML, 'pubDate');
-    const guid = getTagValue(itemXML, 'guid');
-    const creator = getTagValue(itemXML, 'dc:creator') || getTagValue(itemXML, 'author');
-    const contentSnippet = getTagValue(itemXML, 'description');
-
-    items.push({
-      title,
-      link,
-      pubDate,
-      isoDate: toISO(pubDate),
-      guid,
-      creator,
-      contentSnippet
-    });
-  }
-
-  return { title: channelTitle, items };
+function getAtomLink(block) {
+  const match = block.match(/<link[^>]*href=["']([^"']+)["'][^>]*\/?>(?:<\/link>)?/i);
+  return match ? decodeEntities(match[1]) : null;
 }
-
-module.exports = Parser;
 
 function toISO(value) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
+
+function parseRSSItems(xml) {
+  const itemMatches = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
+  return itemMatches.map((itemXML) => {
+    const pubDate = getTagValue(itemXML, 'pubDate');
+    return {
+      title: getTagValue(itemXML, 'title'),
+      link: getTagValue(itemXML, 'link'),
+      pubDate,
+      isoDate: toISO(pubDate),
+      guid: getTagValue(itemXML, 'guid'),
+      creator: getTagValue(itemXML, 'dc:creator') || getTagValue(itemXML, 'author'),
+      contentSnippet: getTagValue(itemXML, 'description')
+    };
+  });
+}
+
+function parseAtomItems(xml) {
+  const entryMatches = xml.match(/<entry[\s\S]*?<\/entry>/gi) || [];
+  return entryMatches.map((entryXML) => {
+    const published = getTagValue(entryXML, 'updated') || getTagValue(entryXML, 'published');
+    return {
+      title: getTagValue(entryXML, 'title'),
+      link: getAtomLink(entryXML),
+      pubDate: published,
+      isoDate: toISO(published),
+      guid: getTagValue(entryXML, 'id'),
+      creator: getTagValue(entryXML, 'author') || getTagValue(entryXML, 'name'),
+      contentSnippet: getTagValue(entryXML, 'summary') || getTagValue(entryXML, 'content')
+    };
+  });
+}
+
+function parseFeed(xml, fallbackTitle) {
+  const channelTitle = getTagValue(xml, 'title') || fallbackTitle;
+  const looksAtom = /<feed[\s>]/i.test(xml) || /<entry[\s>]/i.test(xml);
+  const items = looksAtom ? parseAtomItems(xml) : parseRSSItems(xml);
+  return { title: channelTitle, items };
+}
+
+module.exports = Parser;

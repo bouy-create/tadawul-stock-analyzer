@@ -34,7 +34,7 @@ export default function Home() {
 
     try {
       const [stockRes, newsRes] = await Promise.all([
-        fetch(`/api/stock/${encodeURIComponent(symbol)}?source=${source}`),
+        fetch(`/api/company/${encodeURIComponent(symbol)}?source=${source}`),
         fetch(`/api/news/${encodeURIComponent(symbol)}?source=${source}`)
       ]);
 

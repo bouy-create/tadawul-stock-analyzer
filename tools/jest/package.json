@@ -1,0 +1,7 @@
+{
+  "name": "jest",
+  "version": "0.0.0-local",
+  "bin": {
+    "jest": "bin/jest.js"
+  }
+}

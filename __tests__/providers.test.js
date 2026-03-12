@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { mapYahoo, mapTwelveData, mapFinnhub, isValidPositivePrice } = require("../lib/providers");
+const { mapYahoo, mapTwelveData, mapFinnhub, isValidPositivePrice, compute52Week } = require("../lib/providers");
 
 test("mapYahoo maps quote + summary modules into unified shape", () => {
   const quote = {
@@ -27,6 +27,8 @@ test("mapYahoo maps quote + summary modules into unified shape", () => {
   assert.equal(mapped["52WeekLow"], 124.1);
   assert.equal(mapped.pe, 30.1);
   assert.equal(mapped.eps, 6.4);
+  assert.equal(mapped.dividendYield, 0.005);
+  assert.equal(mapped.dividends.rate, null);
   assert.equal(mapped.source, "yahoo");
 });
 
@@ -44,6 +46,16 @@ test("mapFinnhub maps quote/profile fallback values", () => {
   assert.equal(mapped["52WeekLow"], 20);
 });
 
+
+
+test("compute52Week calculates high/low from fixture", () => {
+  const fixture = require("./fixtures/historical.sample.json");
+
+  const result = compute52Week(fixture);
+
+  assert.equal(result["52WeekHigh"], 105.25);
+  assert.equal(result["52WeekLow"], 95.5);
+});
 test("isValidPositivePrice rejects zero and negative numbers", () => {
   assert.equal(isValidPositivePrice(0), false);
   assert.equal(isValidPositivePrice(-1), false);

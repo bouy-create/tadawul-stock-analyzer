@@ -4,6 +4,8 @@ const {
   fetchFromTwelveData,
   fetchFromYahoo,
   fetchFromFinnhub,
+  fetchHistorical,
+  compute52Week,
   isValidPositivePrice
 } = require("../../../lib/providers");
 const { fetchNews } = require("../../../lib/news");
@@ -24,6 +26,9 @@ function toUnified(symbol, providerResult, news) {
     sector: mapped.sector ?? null,
     industry: mapped.industry ?? null,
     dividendYield: mapped.dividendYield ?? null,
+    dividendRate: mapped.dividendRate ?? null,
+    exDividendDate: mapped.exDividendDate ?? null,
+    dividends: mapped.dividends ?? null,
     recentDividendAnnouncement: mapped.recentDividendAnnouncement ?? null,
     marketCap: mapped.marketCap ?? null,
     source: providerResult.source,
@@ -62,9 +67,15 @@ export default async function handler(req, res) {
       });
 
       if (result?.ok && validPrice) {
+        const historical = await fetchHistorical(candidate);
+        const computed52Week = compute52Week(historical);
+        const mapped = {
+          ...result.mapped,
+          ...computed52Week
+        };
         const companyName = result?.mapped?.companyName;
         const news = await fetchNews(companyName || symbol);
-        const payload = toUnified(candidate, result, news);
+        const payload = toUnified(candidate, { ...result, mapped }, news);
         res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
         return res.status(200).json(payload);
       }

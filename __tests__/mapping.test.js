@@ -50,7 +50,7 @@ test('maps Finnhub quote + profile to unified format', () => {
 });
 
 test('normalizes Saudi and global symbols', () => {
-  assert.deepEqual(normalizeCandidates('2222'), ['2222', '2222.SR', '2222.SA']);
-  assert.deepEqual(normalizeCandidates('TADAWUL:2222'), ['2222', '2222.SR', '2222.SA']);
-  assert.deepEqual(normalizeCandidates('aapl'), ['aapl', 'AAPL']);
+  assert.deepEqual(normalizeCandidates('2222'), ['2222', '2222.SR', '2222.SA', '2222:Tadawul']);
+  assert.deepEqual(normalizeCandidates('TADAWUL:2222'), ['2222', '2222.SR', '2222.SA', '2222:Tadawul']);
+  assert.deepEqual(normalizeCandidates('aapl'), ['AAPL', 'aapl']);
 });

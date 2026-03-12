@@ -6,8 +6,7 @@ const {
   fetchFromSahmk,
   fetchFromTwelveData,
   fetchFromYahooChart,
-  fetchFromYahooQuoteSummary,
-  fetchFromFinnhub
+  fetchFromYahooQuoteSummary
 } = require("../../../lib/providers");
 const { fetchNews } = require("../../../lib/news");
 
@@ -43,34 +42,15 @@ export default async function handler(req, res) {
   const upstream = [];
 
   for (const candidate of candidates) {
-    const attempts = [
+    const initialAttempts = [
       { provider: "sahmk", run: async () => fetchFromSahmk(candidate) },
-      { provider: "twelvedata", run: async () => fetchFromTwelveData(candidate) },
-      {
-        provider: "yahoo",
-        run: async () => {
-          const [chart, summary] = await Promise.all([fetchFromYahooChart(candidate), fetchFromYahooQuoteSummary(candidate)]);
-          const merged = mergeMapped(chart.mapped, summary.mapped);
-          if (!merged["52WeekHigh"] || !merged["52WeekLow"]) {
-            merged["52WeekHigh"] = merged["52WeekHigh"] ?? compute52Week(chart?.mapped?.history || [])["52WeekHigh"];
-            merged["52WeekLow"] = merged["52WeekLow"] ?? compute52Week(chart?.mapped?.history || [])["52WeekLow"];
-          }
-          return {
-            ok: (chart.ok || summary.ok) && isValidPositivePrice(merged.currentPrice),
-            status: chart.status || summary.status,
-            source: "yahoo",
-            raw: { chart: chart.raw, quoteSummary: summary.raw },
-            mapped: merged
-          };
-        }
-      },
-      { provider: "finnhub", run: async () => fetchFromFinnhub(candidate) }
+      { provider: "twelvedata", run: async () => fetchFromTwelveData(candidate) }
     ];
 
-    for (const attempt of attempts) {
+    for (const attempt of initialAttempts) {
       const result = await attempt.run();
       const validPrice = isValidPositivePrice(result?.mapped?.currentPrice);
-      console.log("[stock-api][attempt]", { candidate, provider: attempt.provider, status: result?.status ?? 0, validPrice });
+      console.log("attempt", candidate, attempt.provider, Boolean(result?.ok), result?.status ?? 0);
 
       upstream.push({
         candidate,
@@ -87,6 +67,53 @@ export default async function handler(req, res) {
         res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
         return res.status(200).json(payload);
       }
+    }
+
+    const chart = await fetchFromYahooChart(candidate);
+    console.log("attempt", candidate, "yahoo", Boolean(chart?.ok), chart?.status ?? 0);
+    upstream.push({
+      candidate,
+      provider: "yahoo",
+      status: chart?.status ?? 0,
+      validPrice: isValidPositivePrice(chart?.mapped?.currentPrice),
+      ok: Boolean(chart?.ok),
+      error: chart?.raw?.chart?.error?.description || chart?.raw?.error || null
+    });
+
+    if (chart?.ok && isValidPositivePrice(chart?.mapped?.currentPrice)) {
+      const summary = await fetchFromYahooQuoteSummary(candidate);
+      console.log("attempt", candidate, "yahoo-summary", Boolean(summary?.ok), summary?.status ?? 0);
+
+      upstream.push({
+        candidate,
+        provider: "yahoo-summary",
+        status: summary?.status ?? 0,
+        validPrice: isValidPositivePrice(summary?.mapped?.currentPrice),
+        ok: Boolean(summary?.ok),
+        error: summary?.raw?.error || null
+      });
+
+      const enriched = mergeMapped(chart.mapped, {
+        pe: summary?.mapped?.pe,
+        eps: summary?.mapped?.eps,
+        marketCap: summary?.mapped?.marketCap
+      });
+      if (!enriched["52WeekHigh"] || !enriched["52WeekLow"]) {
+        const computed = compute52Week(chart?.mapped?.history || []);
+        enriched["52WeekHigh"] = enriched["52WeekHigh"] ?? computed["52WeekHigh"];
+        enriched["52WeekLow"] = enriched["52WeekLow"] ?? computed["52WeekLow"];
+      }
+
+      const accepted = {
+        ...chart,
+        mapped: enriched,
+        raw: { chart: chart.raw, quoteSummary: summary?.raw || null }
+      };
+
+      const news = await fetchNews(accepted?.mapped?.companyName || candidate, candidate);
+      const payload = toUnified(accepted, news);
+      res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
+      return res.status(200).json(payload);
     }
   }
 

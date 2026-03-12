@@ -4,9 +4,9 @@ const {
   fetchFromTwelveData,
   fetchFromYahoo,
   fetchFromFinnhub,
-  fetchNews,
   isValidPositivePrice
 } = require("../../../lib/providers");
+const { fetchNews } = require("../../../lib/news");
 
 function toUnified(symbol, providerResult, news) {
   const mapped = providerResult.mapped || {};
@@ -62,7 +62,8 @@ export default async function handler(req, res) {
       });
 
       if (result?.ok && validPrice) {
-        const news = await fetchNews(candidate);
+        const companyName = result?.mapped?.companyName;
+        const news = await fetchNews(companyName || symbol);
         const payload = toUnified(candidate, result, news);
         res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
         return res.status(200).json(payload);

@@ -1,17 +1,24 @@
-const endpoints = ["AAPL", "2222"];
+const endpoints = ["AAPL", "2222", "2222.SR"];
 
 async function run() {
+  const rows = [];
   for (const symbol of endpoints) {
-    const url = `http://localhost:3000/api/company/${symbol}`;
+    const url = `http://localhost:3000/api/company/${encodeURIComponent(symbol)}`;
     try {
       const res = await fetch(url);
       const body = await res.json();
-      const hasCurrentPrice = typeof body.currentPrice === "number" && Number.isFinite(body.currentPrice);
-      console.log(JSON.stringify({ symbol, endpoint: `/api/company/${symbol}`, status: res.status, hasCurrentPrice, source: body.source ?? null }));
+      rows.push({
+        symbol,
+        status: res.status,
+        currentPricePresent: typeof body.currentPrice === "number" && body.currentPrice > 0,
+        provider: body.source || "-"
+      });
     } catch (error) {
-      console.log(JSON.stringify({ symbol, endpoint: `/api/company/${symbol}`, status: "ERROR", hasCurrentPrice: false, source: null, error: error.message }));
+      rows.push({ symbol, status: "ERROR", currentPricePresent: false, provider: error.message });
     }
   }
+
+  console.table(rows);
 }
 
 run();

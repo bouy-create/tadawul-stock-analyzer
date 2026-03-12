@@ -1,4 +1,4 @@
-const endpoints = ['AAPL', '2222.SR'];
+const endpoints = ["AAPL", "2222"];
 
 async function run() {
   for (const symbol of endpoints) {
@@ -6,10 +6,10 @@ async function run() {
     try {
       const res = await fetch(url);
       const body = await res.json();
-      const hasCurrentPrice = typeof body.currentPrice === 'number' && Number.isFinite(body.currentPrice);
-      console.log(JSON.stringify({ endpoint: `/api/company/${symbol}`, status: res.status, hasCurrentPrice, source: body.source ?? null }));
+      const hasCurrentPrice = typeof body.currentPrice === "number" && Number.isFinite(body.currentPrice);
+      console.log(JSON.stringify({ symbol, endpoint: `/api/company/${symbol}`, status: res.status, hasCurrentPrice, source: body.source ?? null }));
     } catch (error) {
-      console.log(JSON.stringify({ endpoint: `/api/company/${symbol}`, status: 'ERROR', hasCurrentPrice: false, source: null, error: error.message }));
+      console.log(JSON.stringify({ symbol, endpoint: `/api/company/${symbol}`, status: "ERROR", hasCurrentPrice: false, source: null, error: error.message }));
     }
   }
 }

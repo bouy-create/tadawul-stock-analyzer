@@ -1,4 +1,6 @@
 // pages/api/company/[symbol].js  (مقتطف)
+const { fetchNews } = require('../../../lib/news');
+
 export default async function handler(req, res) {
   const { symbol } = req.query;
   if (!symbol) return res.status(400).json({ error: 'missing symbol' });
@@ -17,6 +19,16 @@ export default async function handler(req, res) {
     const n = Number(v);
     return !isNaN(n) && n > 0;
   };
+
+  async function withNews(payload) {
+    try {
+      const query = payload.companyName || payload.symbol || symbol;
+      const news = await fetchNews(query);
+      return { ...payload, news };
+    } catch (error) {
+      return { ...payload, news: [] };
+    }
+  }
 
   // helper to fetch JSON safely
   async function fetchJSON(url, opts = {}) {
@@ -50,7 +62,7 @@ export default async function handler(req, res) {
           upstream: { provider: 'sahmk', raw: b }
         };
         res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
-        return res.status(200).json(out);
+        return res.status(200).json(await withNews(out));
       }
     }
   }
@@ -76,7 +88,7 @@ export default async function handler(req, res) {
           upstream: { provider: 'twelvedata', raw: b }
         };
         res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
-        return res.status(200).json(out);
+        return res.status(200).json(await withNews(out));
       }
     }
   }
@@ -102,7 +114,7 @@ export default async function handler(req, res) {
           upstream: { provider: 'finnhub', raw: { quote: qb, profile: pb } }
         };
         res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
-        return res.status(200).json(out);
+        return res.status(200).json(await withNews(out));
       }
     }
   }

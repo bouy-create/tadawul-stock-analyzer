@@ -1,5 +1,5 @@
-const { test, describe } = require("node:test");
-const assert = require("node:assert/strict");
+const test = require('node:test');
+const assert = require('node:assert/strict');
 const {
   mapSahmk,
   mapTwelveData,
@@ -7,69 +7,82 @@ const {
   mapYahooQuoteSummary,
   mapFinnhub,
   isValidPositivePrice,
-  compute52Week,
-  mergeMapped
-} = require("../lib/providers");
+  compute52WeekFromCloses,
+  mergeMissingFields
+} = require('../lib/providers');
 
-describe("provider mapping", () => {
-  test("mapSahmk maps core fields", () => {
-    const mapped = mapSahmk({ price: "35.2", previous_close: "34.6", volume: "100", name_en: "ACME SA" }, "2222.SR");
-    assert.equal(mapped.currentPrice, 35.2);
-    assert.equal(mapped.previousClose, 34.6);
-    assert.equal(mapped.volume, 100);
-    assert.equal(mapped.companyName, "ACME SA");
-  });
+test('maps SAHMK payload', () => {
+  const mapped = mapSahmk({ name_en: 'ACME', price: '11.2', previous_close: '10.8', market_cap: '1000' }, '2222.SR');
+  assert.equal(mapped.symbol, '2222.SR');
+  assert.equal(mapped.companyName, 'ACME');
+  assert.equal(mapped.currentPrice, 11.2);
+  assert.equal(mapped.previousClose, 10.8);
+  assert.equal(mapped.marketCap, 1000);
+});
 
-  test("mapTwelveData maps fifty two week values", () => {
-    const mapped = mapTwelveData({ close: "189.4", fifty_two_week: { high: "199", low: "124" } }, "AAPL");
-    assert.equal(mapped.currentPrice, 189.4);
-    assert.equal(mapped["52WeekHigh"], 199);
-    assert.equal(mapped["52WeekLow"], 124);
-  });
+test('maps TwelveData payload', () => {
+  const mapped = mapTwelveData({ name: 'Apple', close: '190.1', fifty_two_week: { high: '199', low: '124' }, pe_ratio: '30.5' }, 'AAPL');
+  assert.equal(mapped.currentPrice, 190.1);
+  assert.equal(mapped['52WeekHigh'], 199);
+  assert.equal(mapped['52WeekLow'], 124);
+  assert.equal(mapped.pe, 30.5);
+});
 
-  test("mapYahooChart computes range from close series", () => {
-    const payload = {
-      chart: {
-        result: [{ timestamp: [1710000000, 1710086400, 1710172800], meta: { regularMarketPrice: 190, previousClose: 188, regularMarketVolume: 10, longName: "Apple Inc." }, indicators: { quote: [{ close: [180, 190, 170] }] } }]
-      }
-    };
-    const mapped = mapYahooChart(payload, "AAPL");
-    assert.equal(mapped.currentPrice, 190);
-    assert.equal(mapped["52WeekHigh"], 190);
-    assert.equal(mapped["52WeekLow"], 170);
-  });
+test('maps Yahoo chart and computes 52-week from closes', () => {
+  const payload = {
+    chart: {
+      result: [{
+        meta: { longName: 'Apple Inc.', regularMarketPrice: 191.5, previousClose: 189.1, regularMarketVolume: 1000 },
+        indicators: { quote: [{ close: [180, null, 0, 195, 175] }] }
+      }]
+    }
+  };
+  const mapped = mapYahooChart(payload, 'AAPL');
+  assert.equal(mapped.currentPrice, 191.5);
+  assert.equal(mapped['52WeekHigh'], 195);
+  assert.equal(mapped['52WeekLow'], 175);
+});
 
-  test("mapYahooQuoteSummary maps valuation and profile fields", () => {
-    const summary = {
-      price: { regularMarketPrice: 191, regularMarketPreviousClose: 189, marketCap: 1000 },
-      summaryProfile: { sector: "Technology", industry: "Consumer Electronics" },
-      financialData: { dividendYield: 0.006 },
-      defaultKeyStatistics: { trailingPE: 30.2, trailingEps: 6.5, sharesOutstanding: 5, lastDividendDate: 1710011111 }
-    };
-    const mapped = mapYahooQuoteSummary(summary, "AAPL");
-    assert.equal(mapped.pe, 30.2);
-    assert.equal(mapped.eps, 6.5);
-    assert.equal(mapped.sector, "Technology");
-    assert.equal(mapped.dividendYield, 0.006);
+test('maps Yahoo quoteSummary modules', () => {
+  const summary = {
+    price: { longName: 'Apple Inc.', regularMarketPrice: 191, regularMarketPreviousClose: 189, marketCap: 3000 },
+    summaryProfile: { sector: 'Technology', industry: 'Consumer Electronics' },
+    financialData: { dividendYield: 0.005 },
+    defaultKeyStatistics: { trailingPE: 29.9, trailingEps: 6.4 }
+  };
 
-    const merged = mergeMapped({ currentPrice: 10, marketCap: null }, { sharesOutstanding: 100 });
-    assert.equal(merged.marketCap, 1000);
-  });
+  const mapped = mapYahooQuoteSummary(summary, 'AAPL');
+  assert.equal(mapped.marketCap, 3000);
+  assert.equal(mapped.pe, 29.9);
+  assert.equal(mapped.eps, 6.4);
+  assert.equal(mapped.sector, 'Technology');
+  assert.equal(mapped.dividendYield, 0.005);
+});
 
-  test("mapFinnhub uses quote/profile/metrics", () => {
-    const mapped = mapFinnhub({ c: 33.5, pc: 33.1, v: 100 }, { finnhubIndustry: "Energy", marketCapitalization: 200 }, { peTTM: 20, epsTTM: 2, "52WeekHigh": 50, "52WeekLow": 10 }, "2222.SR");
-    assert.equal(mapped.currentPrice, 33.5);
-    assert.equal(mapped.pe, 20);
-    assert.equal(mapped.eps, 2);
-    assert.equal(mapped["52WeekHigh"], 50);
-  });
+test('maps Finnhub quote/profile/metric payloads', () => {
+  const mapped = mapFinnhub(
+    { c: 33.5, pc: 33.0, v: 100, h: 40, l: 20 },
+    { name: 'Company', marketCapitalization: 200, finnhubIndustry: 'Energy' },
+    { peTTM: 15.2, epsTTM: 1.7, dividendYieldIndicatedAnnual: 0.03, '52WeekHigh': 50, '52WeekLow': 10 },
+    '2222.SR'
+  );
+  assert.equal(mapped.currentPrice, 33.5);
+  assert.equal(mapped.pe, 15.2);
+  assert.equal(mapped.eps, 1.7);
+  assert.equal(mapped['52WeekHigh'], 50);
+  assert.equal(mapped['52WeekLow'], 10);
+});
 
-  test("compute52Week and validity checks", () => {
-    const range = compute52Week([{ close: 0 }, { close: null }, { close: 95.5 }, { close: 105.25 }]);
-    assert.equal(range["52WeekHigh"], 105.25);
-    assert.equal(range["52WeekLow"], 95.5);
-    assert.equal(isValidPositivePrice(0), false);
-    assert.equal(isValidPositivePrice(-1), false);
-    assert.equal(isValidPositivePrice("5.2"), true);
-  });
+test('validates positive prices and merge-only-missing behavior', () => {
+  assert.equal(isValidPositivePrice(0), false);
+  assert.equal(isValidPositivePrice(-1), false);
+  assert.equal(isValidPositivePrice('5.2'), true);
+
+  const range = compute52WeekFromCloses([0, null, 95, 101]);
+  assert.equal(range['52WeekHigh'], 101);
+  assert.equal(range['52WeekLow'], 95);
+
+  const merged = mergeMissingFields({ currentPrice: 10, pe: null, eps: 2 }, { pe: 8, eps: 3 });
+  assert.equal(merged.pe, 8);
+  assert.equal(merged.eps, 2);
 });

@@ -1,4 +1,4 @@
-const endpoints = ["2222"];
+const endpoints = ["2222", "AAPL"];
 
 async function run() {
   for (const symbol of endpoints) {
